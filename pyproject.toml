@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "pet_phonons"
+version = "0.1.0"
+description = "Phonon bands with uncertainty quantification from MLIP ensembles"
+requires-python = ">=3.10"
+dependencies = [
+    "ase",
+    "phonopy",
+    "numpy",
+    "matplotlib",
+    "ipi",
+]
+
+[project.optional-dependencies]
+dev = ["tox", "ruff"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 88
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]   # pycodestyle, pyflakes, isort
