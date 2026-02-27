@@ -201,6 +201,17 @@ def run_ipi_forces(
     force_file = workdir / f"{prefix}.committee_force_0"
     n_atoms = len(supercell)
     forces = _parse_committee_forces(force_file, len(displacements), n_atoms)
+
+    # Clean up i-PI output files and our xyz inputs.
+    for f in workdir.glob(f"{prefix}.*"):
+        f.unlink()
+    supercell_path.unlink(missing_ok=True)
+    displacements_path.unlink(missing_ok=True)
+    try:
+        workdir.rmdir()  # removes the directory only if now empty
+    except OSError:
+        pass
+
     # Rotate forces back from the upper-triangular frame to the original frame.
     # Forces transform as vectors: f_orig = f_rot @ Q.T
     return forces @ Q.T
