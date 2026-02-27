@@ -8,6 +8,7 @@ This module handles:
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import ase
@@ -33,8 +34,9 @@ def _make_forcefield_xml(model: str, device: str, template_path: str) -> str:
     )
 
 
-def _make_output_xml(workdir: Path, prefix: str) -> str:
-    return f"""<output prefix="{workdir}/{prefix}">
+def _make_output_xml(prefix: str) -> str:
+    # Paths are relative to CWD at simulation time (i.e. workdir).
+    return f"""<output prefix="{prefix}">
 <properties stride="1" filename="out">
     [step, cell_abcABC]
 </properties>
@@ -49,14 +51,13 @@ def _make_simulation_xml(
     displacements_path: str,
     model: str,
     device: str,
-    workdir: Path,
+    template_path: str,
     prefix: str = _IPI_OUTPUT_PREFIX,
 ) -> str:
     from ipi.utils.scripting import simulation_xml
 
-    template_path = str(workdir / "relaxed_supercell.xyz")
     forcefield = _make_forcefield_xml(model, device, template_path)
-    output = _make_output_xml(workdir, prefix)
+    output = _make_output_xml(prefix)
     motion = f'<motion mode="replay">\n<file mode="ase"> {displacements_path} </file>\n</motion>'
 
     return simulation_xml(
@@ -133,7 +134,7 @@ def run_ipi_forces(
     """
     from ipi.utils.scripting import InteractiveSimulation
 
-    workdir = Path(workdir)
+    workdir = Path(workdir).resolve()
     workdir.mkdir(parents=True, exist_ok=True)
 
     supercell_path = workdir / "relaxed_supercell.xyz"
@@ -142,17 +143,24 @@ def run_ipi_forces(
     ase.io.write(str(supercell_path), supercell)
     ase.io.write(str(displacements_path), displacements)
 
+    # i-PI writes all output relative to CWD, so we run from inside workdir.
+    # All paths passed into the XML must be absolute.
     xml = _make_simulation_xml(
         supercell=supercell,
         displacements_path=str(displacements_path),
         model=model,
         device=device,
-        workdir=workdir,
+        template_path=str(supercell_path),
         prefix=prefix,
     )
 
-    sim = InteractiveSimulation(xml)
-    sim.run(len(displacements))
+    old_cwd = Path.cwd()
+    try:
+        os.chdir(workdir)
+        sim = InteractiveSimulation(xml)
+        sim.run(len(displacements))
+    finally:
+        os.chdir(old_cwd)
 
     force_file = workdir / f"{prefix}.committee_force_0"
     n_atoms = len(supercell)
