@@ -8,8 +8,8 @@ from pathlib import Path
 import ase
 import numpy as np
 from phonopy import Phonopy
-from phonopy.interface.phonopy_atoms import PhonopyAtoms
 from phonopy.phonon.band_structure import get_band_qpoints_and_path_connections
+from phonopy.structure.atoms import PhonopyAtoms
 
 from ._ipi import run_ipi_forces
 from ._plot import plot_bands
@@ -89,9 +89,7 @@ def _resolve_bandpath(
     segments = _parse_path_string(bp.path)
     bpath = [[bp.special_points[p] for p in seg] for seg in segments]
     labels = _make_labels(segments)
-    qpoints, connections = get_band_qpoints_and_path_connections(
-        bpath, npoints=npoints
-    )
+    qpoints, connections = get_band_qpoints_and_path_connections(bpath, npoints=npoints)
     return qpoints, connections, labels
 
 
@@ -242,14 +240,10 @@ class PhononEnsemble:
             ph.forces = forces_for_member
             ph.produce_force_constants()
             ph.symmetrize_force_constants()
-            ph.run_band_structure(
-                qpoints, path_connections=connections, labels=labels
-            )
+            ph.run_band_structure(qpoints, path_connections=connections, labels=labels)
             return ph
 
-        self._phonons = [
-            _compute_single(force_sets[:, i]) for i in range(n_ensemble)
-        ]
+        self._phonons = [_compute_single(force_sets[:, i]) for i in range(n_ensemble)]
 
         # Mean phonon: average forces across ensemble members
         mean_forces = force_sets.mean(axis=1)  # (n_disp, n_atoms, 3)

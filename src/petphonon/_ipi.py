@@ -99,9 +99,7 @@ def _make_simulation_xml(
     )
 
 
-def _parse_committee_forces(
-    force_file: Path, n_disp: int, n_atoms: int
-) -> np.ndarray:
+def _parse_committee_forces(force_file: Path, n_disp: int, n_atoms: int) -> np.ndarray:
     """Parse the i-PI committee force trajectory file.
 
     The file has one row per simulation step (i.e. one displaced supercell),

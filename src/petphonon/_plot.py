@@ -8,9 +8,9 @@ Provides three plot modes:
 
 from __future__ import annotations
 
-import numpy as np
-import matplotlib.pyplot as plt
 import matplotlib.axes
+import matplotlib.pyplot as plt
+import numpy as np
 
 # Conversion factors from phonopy's native THz
 _UNIT_FACTORS = {
@@ -34,9 +34,7 @@ def _get_unit_factor(unit: str) -> float:
 def _draw_band(ax, phonon, scale: float, **line_kwargs):
     """Draw all segments of one phonopy band structure on ax."""
     bs = phonon.band_structure
-    for dist, freq, conn in zip(
-        bs.distances, bs.frequencies, bs.path_connections
-    ):
+    for dist, freq, conn in zip(bs.distances, bs.frequencies, bs.path_connections):
         ax.plot(dist, freq * scale, **line_kwargs)
 
 
@@ -129,7 +127,9 @@ def plot_bands(
     fig, ax : matplotlib Figure and Axes
     """
     if mode not in ("mean", "mean+std", "ensemble"):
-        raise ValueError(f"Unknown mode '{mode}'. Use 'mean', 'mean+std', or 'ensemble'.")
+        raise ValueError(
+            f"Unknown mode '{mode}'. Use 'mean', 'mean+std', or 'ensemble'."
+        )
 
     scale = _get_unit_factor(unit)
 
@@ -140,7 +140,9 @@ def plot_bands(
 
     if mode == "ensemble":
         for ph in phonons:
-            _draw_band(ax, ph, scale, color=color, lw=ensemble_linewidth, alpha=ensemble_alpha)
+            _draw_band(
+                ax, ph, scale, color=color, lw=ensemble_linewidth, alpha=ensemble_alpha
+            )
         _draw_band(ax, mean_phonon, scale, color=color, lw=mean_linewidth, alpha=1.0)
 
     elif mode == "mean+std":
@@ -152,7 +154,7 @@ def plot_bands(
         ):
             seg_freqs = freq_stack[seg_idx]  # (n_ensemble, n_qpts, n_bands)
             mean_f = seg_freqs.mean(axis=0) * scale  # (n_qpts, n_bands)
-            std_f = seg_freqs.std(axis=0) * scale    # (n_qpts, n_bands)
+            std_f = seg_freqs.std(axis=0) * scale  # (n_qpts, n_bands)
             for band_idx in range(mean_f.shape[1]):
                 ax.fill_between(
                     dist,
