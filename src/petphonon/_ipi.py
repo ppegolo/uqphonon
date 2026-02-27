@@ -135,6 +135,7 @@ def run_ipi_forces(
     from ipi.utils.scripting import InteractiveSimulation
 
     workdir = Path(workdir).resolve()
+    model = str(Path(model).resolve())  # must be absolute before chdir
     workdir.mkdir(parents=True, exist_ok=True)
 
     supercell_path = workdir / "relaxed_supercell.xyz"
