@@ -19,6 +19,36 @@ import numpy as np
 _IPI_OUTPUT_PREFIX = "ipi_forces"
 
 
+def _rotate_to_upper_triangular(atoms: ase.Atoms) -> tuple[np.ndarray, ase.Atoms]:
+    """Rotate atoms so its cell matrix is upper triangular (required by i-PI).
+
+    i-PI requires h = cell.T to be upper triangular (h[1,0] = h[2,0] = h[2,1] = 0).
+    Returns (Q, rotated_atoms) where Q is the rotation matrix such that
+    new_positions = old_positions @ Q and new_cell = old_cell @ Q.
+    Forces rotate the same way, so to invert: f_old = f_new @ Q.T.
+    """
+    cell = atoms.cell.array
+    Q, R = np.linalg.qr(cell.T)
+    # Ensure positive diagonal so the cell vectors point in canonical directions
+    signs = np.sign(np.diag(R))
+    signs[signs == 0] = 1
+    Q = Q * signs  # Q @ diag(signs)
+    R = (R.T * signs).T  # diag(signs) @ R
+
+    rotated = atoms.copy()
+    rotated.set_cell(R.T, scale_atoms=False)
+    rotated.set_positions(atoms.get_positions() @ Q)
+    return Q, rotated
+
+
+def _apply_rotation(Q: np.ndarray, atoms: ase.Atoms) -> ase.Atoms:
+    """Apply rotation Q to atoms positions and cell."""
+    rotated = atoms.copy()
+    rotated.set_cell(atoms.cell.array @ Q, scale_atoms=False)
+    rotated.set_positions(atoms.get_positions() @ Q)
+    return rotated
+
+
 def _make_forcefield_xml(model: str, device: str, template_path: str) -> str:
     params = {
         "template": template_path,
@@ -141,13 +171,18 @@ def run_ipi_forces(
     supercell_path = workdir / "relaxed_supercell.xyz"
     displacements_path = workdir / "supercells.xyz"
 
-    ase.io.write(str(supercell_path), supercell)
-    ase.io.write(str(displacements_path), displacements)
+    # i-PI requires the cell to be upper triangular. Rotate all structures,
+    # then rotate the returned forces back to the original frame.
+    Q, supercell_rot = _rotate_to_upper_triangular(supercell)
+    displacements_rot = [_apply_rotation(Q, d) for d in displacements]
+
+    ase.io.write(str(supercell_path), supercell_rot)
+    ase.io.write(str(displacements_path), displacements_rot)
 
     # i-PI writes all output relative to CWD, so we run from inside workdir.
     # All paths passed into the XML must be absolute.
     xml = _make_simulation_xml(
-        supercell=supercell,
+        supercell=supercell_rot,
         displacements_path=str(displacements_path),
         model=model,
         device=device,
@@ -165,4 +200,7 @@ def run_ipi_forces(
 
     force_file = workdir / f"{prefix}.committee_force_0"
     n_atoms = len(supercell)
-    return _parse_committee_forces(force_file, len(displacements), n_atoms)
+    forces = _parse_committee_forces(force_file, len(displacements), n_atoms)
+    # Rotate forces back from the upper-triangular frame to the original frame.
+    # Forces transform as vectors: f_orig = f_rot @ Q.T
+    return forces @ Q.T
