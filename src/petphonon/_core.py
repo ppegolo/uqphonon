@@ -35,16 +35,21 @@ def _phonopy_to_ase(ph_atoms: PhonopyAtoms) -> ase.Atoms:
 def _parse_path_string(path_str: str) -> list[list[str]]:
     """Convert an ASE band path string to a list of segments.
 
-    Handles both compact "GMKGA" and explicit "G,M,K|G,A" formats.
-    Returns a list of segments, each segment being a list of point names.
+    Handles three formats:
+    - Compact user: 'GMKG|ALHA'  (| = segment break, each char = point)
+    - Explicit user: 'G,M,K|G,A' (| = segment break, , = point separator)
+    - ASE auto-detect: 'GXWK,GLUWLK' (, = segment break, each char = point)
     """
-    # Handle explicit comma-separated format
-    if "," in path_str:
+    if "|" in path_str:
         raw_segments = path_str.split("|")
-        return [seg.split(",") for seg in raw_segments]
-    # Handle compact format: split on | for disconnected segments
-    raw_segments = path_str.split("|")
-    return [list(seg) for seg in raw_segments]
+        if "," in path_str:
+            return [seg.split(",") for seg in raw_segments]
+        return [list(seg) for seg in raw_segments]
+    elif "," in path_str:
+        # ASE format: comma separates disconnected segments
+        return [list(seg) for seg in path_str.split(",")]
+    else:
+        return [list(path_str)]
 
 
 def _make_labels(segments: list[list[str]]) -> list[str]:
