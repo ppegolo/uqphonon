@@ -1,9 +1,10 @@
 """Phonon band structure plotting for ensembles.
 
-Provides three plot modes:
+Provides four plot modes:
 - "mean"      : mean band structure only
 - "mean+std"  : mean ± std as a shaded region
 - "ensemble"  : all ensemble members (light) + mean (bold)
+- "spectral"  : 2D heatmap (spectral-function style)
 """
 
 from __future__ import annotations
@@ -85,6 +86,60 @@ def _stack_frequencies(phonons) -> np.ndarray:
     ]
 
 
+def _plot_spectral(ax, phonons, scale: float, cmap: str):
+    """Draw a spectral-function-style heatmap of the band ensemble."""
+    bs = phonons[0].band_structure
+    n_ensemble = len(phonons)
+    nfreq_bins = 300
+
+    # Global frequency range across all segments and ensemble members
+    freq_min = min(
+        ph.band_structure.frequencies[i].min()
+        for ph in phonons
+        for i in range(len(bs.distances))
+    ) * scale
+    freq_max = max(
+        ph.band_structure.frequencies[i].max()
+        for ph in phonons
+        for i in range(len(bs.distances))
+    ) * scale
+    freq_edges = np.linspace(freq_min, freq_max, nfreq_bins + 1)
+
+    for seg_idx, dist in enumerate(bs.distances):
+        # (n_ensemble, n_qpts, n_bands)
+        seg_freqs = (
+            np.stack([ph.band_structure.frequencies[seg_idx] for ph in phonons], axis=0)
+            * scale
+        )
+        n_qpts, n_bands = seg_freqs.shape[1], seg_freqs.shape[2]
+
+        # All (distance, frequency) pairs
+        d_all = np.broadcast_to(
+            dist[:, np.newaxis, np.newaxis], (n_qpts, n_ensemble, n_bands)
+        ).ravel()
+        f_all = seg_freqs.transpose(1, 0, 2).ravel()
+
+        # Build distance bin edges from midpoints
+        if n_qpts > 1:
+            d_edges = np.concatenate(
+                [
+                    [dist[0] - (dist[1] - dist[0]) / 2],
+                    (dist[:-1] + dist[1:]) / 2,
+                    [dist[-1] + (dist[-1] - dist[-2]) / 2],
+                ]
+            )
+        else:
+            d_edges = np.array([dist[0] - 0.01, dist[0] + 0.01])
+
+        H, _, _ = np.histogram2d(d_all, f_all, bins=[d_edges, freq_edges])
+        # Normalise per q-column so every q-point has equal total weight
+        col_sum = H.sum(axis=1, keepdims=True)
+        col_sum[col_sum == 0] = 1
+        H /= col_sum
+
+        ax.pcolormesh(d_edges, freq_edges, H.T, cmap=cmap, shading="auto")
+
+
 def plot_bands(
     phonons,
     mean_phonon,
@@ -96,6 +151,7 @@ def plot_bands(
     ensemble_linewidth: float = 0.5,
     mean_linewidth: float = 1.5,
     std_alpha: float = 0.3,
+    cmap: str = "inferno",
 ) -> tuple[plt.Figure, matplotlib.axes.Axes]:
     """Plot phonon band structure with UQ.
 
@@ -106,13 +162,13 @@ def plot_bands(
     mean_phonon : Phonopy
         Phonopy object for the mean-force bands.
     mode : str
-        One of "mean", "mean+std", or "ensemble".
+        One of "mean", "mean+std", "ensemble", or "spectral".
     unit : str
         Frequency unit: "THz", "cm-1", or "meV".
     ax : matplotlib Axes, optional
         If None, a new figure and axes are created.
     color : str
-        Color for the MLIP bands.
+        Color for the MLIP bands (not used in "spectral" mode).
     ensemble_alpha : float
         Alpha for individual ensemble members (mode="ensemble").
     ensemble_linewidth : float
@@ -121,14 +177,16 @@ def plot_bands(
         Line width for the mean band.
     std_alpha : float
         Alpha for the std fill (mode="mean+std").
+    cmap : str
+        Colormap for mode="spectral".
 
     Returns
     -------
     fig, ax : matplotlib Figure and Axes
     """
-    if mode not in ("mean", "mean+std", "ensemble"):
+    if mode not in ("mean", "mean+std", "ensemble", "spectral"):
         raise ValueError(
-            f"Unknown mode '{mode}'. Use 'mean', 'mean+std', or 'ensemble'."
+            f"Unknown mode '{mode}'. Use 'mean', 'mean+std', 'ensemble', or 'spectral'."
         )
 
     scale = _get_unit_factor(unit)
@@ -168,6 +226,9 @@ def plot_bands(
 
     elif mode == "mean":
         _draw_band(ax, mean_phonon, scale, color=color, lw=mean_linewidth, alpha=1.0)
+
+    elif mode == "spectral":
+        _plot_spectral(ax, phonons, scale, cmap)
 
     _decorate_axes(ax, mean_phonon, scale, unit)
     ax.set_ylim(bottom=0)
