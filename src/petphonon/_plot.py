@@ -87,39 +87,53 @@ def _stack_frequencies(phonons) -> np.ndarray:
 
 
 def _plot_spectral(ax, phonons, scale: float, cmap: str):
-    """Draw a spectral-function-style heatmap of the band ensemble."""
-    bs = phonons[0].band_structure
-    n_ensemble = len(phonons)
-    nfreq_bins = 300
+    """Draw a spectral-function-style heatmap with Gaussian broadening.
 
-    # Global frequency range across all segments and ensemble members
-    freq_min = min(
-        ph.band_structure.frequencies[i].min()
-        for ph in phonons
-        for i in range(len(bs.distances))
+    Each band mode contributes a Gaussian peak of width sigma to the spectral
+    weight S(q, ω). S is normalised per q-point (max = 1) and plotted with a
+    shared colour scale across all segments.
+    """
+    bs = phonons[0].band_structure
+    nfreq_pts = 300
+
+    # Global frequency range
+    all_freqs = np.concatenate(
+        [
+            ph.band_structure.frequencies[i].ravel()
+            for ph in phonons
+            for i in range(len(bs.distances))
+        ]
     ) * scale
-    freq_max = max(
-        ph.band_structure.frequencies[i].max()
-        for ph in phonons
-        for i in range(len(bs.distances))
-    ) * scale
-    freq_edges = np.linspace(freq_min, freq_max, nfreq_bins + 1)
+    freq_min, freq_max = all_freqs.min(), all_freqs.max()
+    freq_grid = np.linspace(freq_min, freq_max, nfreq_pts)  # (nfreq_pts,)
+    sigma = (freq_max - freq_min) / 50  # ~2 % of the total range
+
+    # Pre-compute S for all segments so we can set a shared vmax
+    S_list = []
+    d_edges_list = []
 
     for seg_idx, dist in enumerate(bs.distances):
-        # (n_ensemble, n_qpts, n_bands)
         seg_freqs = (
-            np.stack([ph.band_structure.frequencies[seg_idx] for ph in phonons], axis=0)
+            np.stack(
+                [ph.band_structure.frequencies[seg_idx] for ph in phonons], axis=0
+            )
             * scale
-        )
-        n_qpts, n_bands = seg_freqs.shape[1], seg_freqs.shape[2]
+        )  # (n_ensemble, n_qpts, n_bands)
+        n_qpts = seg_freqs.shape[1]
 
-        # All (distance, frequency) pairs
-        d_all = np.broadcast_to(
-            dist[:, np.newaxis, np.newaxis], (n_qpts, n_ensemble, n_bands)
-        ).ravel()
-        f_all = seg_freqs.transpose(1, 0, 2).ravel()
+        # freqs_at_q: (n_qpts, n_ensemble * n_bands)
+        freqs_at_q = seg_freqs.transpose(1, 0, 2).reshape(n_qpts, -1)
 
-        # Build distance bin edges from midpoints
+        # S[iq, iω] = Σ_mode exp(-½ ((ω - ω_mode) / σ)²)
+        # diff: (n_qpts, n_modes, nfreq_pts)
+        diff = freq_grid[np.newaxis, np.newaxis, :] - freqs_at_q[:, :, np.newaxis]
+        S = np.exp(-0.5 * (diff / sigma) ** 2).sum(axis=1)  # (n_qpts, nfreq_pts)
+
+        # Normalise per q-point so every q has the same peak height
+        q_max = S.max(axis=1, keepdims=True)
+        q_max[q_max == 0] = 1
+        S /= q_max
+
         if n_qpts > 1:
             d_edges = np.concatenate(
                 [
@@ -131,13 +145,16 @@ def _plot_spectral(ax, phonons, scale: float, cmap: str):
         else:
             d_edges = np.array([dist[0] - 0.01, dist[0] + 0.01])
 
-        H, _, _ = np.histogram2d(d_all, f_all, bins=[d_edges, freq_edges])
-        # Normalise per q-column so every q-point has equal total weight
-        col_sum = H.sum(axis=1, keepdims=True)
-        col_sum[col_sum == 0] = 1
-        H /= col_sum
+        S_list.append(S)
+        d_edges_list.append(d_edges)
 
-        ax.pcolormesh(d_edges, freq_edges, H.T, cmap=cmap, shading="auto")
+    df = freq_grid[1] - freq_grid[0]
+    freq_edges = np.concatenate(
+        [[freq_grid[0] - df / 2], (freq_grid[:-1] + freq_grid[1:]) / 2, [freq_grid[-1] + df / 2]]
+    )
+
+    for S, d_edges in zip(S_list, d_edges_list):
+        ax.pcolormesh(d_edges, freq_edges, S.T, cmap=cmap, shading="auto", vmin=0, vmax=1)
 
 
 def plot_bands(
