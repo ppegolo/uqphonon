@@ -23,10 +23,7 @@ def _make_forcefield_xml(model: str, device: str, template_path: str) -> str:
         "template": template_path,
         "model": model,
         "device": device,
-        "energy_uncertainty": True,
-        "energy_ensemble": True,
         "force_virial_ensemble": True,
-        "check_consistency": True,
     }
     from ipi.utils.scripting import forcefield_xml
 
