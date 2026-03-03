@@ -7,7 +7,7 @@ requires = [
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "petphonon"
+name = "uqphonon"
 version = "0.1.0"
 description = "Phonon bands with uncertainty quantification from MLIP ensembles"
 requires-python = ">=3.10"

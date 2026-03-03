@@ -1,4 +1,4 @@
-# petphonon
+# uqphonon
 
 Minimal Python library for computing phonon band structures with uncertainty quantification (UQ) from machine learning interatomic potentials (MLIPs).
 
@@ -13,7 +13,7 @@ pip install -e .
 ## Quick Start
 
 ```python
-from petphonon import PhononEnsemble
+from uqphonon import PhononEnsemble
 from ase.build import bulk
 
 # Pre-relaxed primitive cell
