@@ -97,13 +97,16 @@ def _plot_spectral(ax, phonons, scale: float, cmap: str):
     nfreq_pts = 300
 
     # Global frequency range
-    all_freqs = np.concatenate(
-        [
-            ph.band_structure.frequencies[i].ravel()
-            for ph in phonons
-            for i in range(len(bs.distances))
-        ]
-    ) * scale
+    all_freqs = (
+        np.concatenate(
+            [
+                ph.band_structure.frequencies[i].ravel()
+                for ph in phonons
+                for i in range(len(bs.distances))
+            ]
+        )
+        * scale
+    )
     freq_min, freq_max = all_freqs.min(), all_freqs.max()
     freq_grid = np.linspace(freq_min, freq_max, nfreq_pts)  # (nfreq_pts,)
     sigma = (freq_max - freq_min) / 50  # ~2 % of the total range
@@ -114,9 +117,7 @@ def _plot_spectral(ax, phonons, scale: float, cmap: str):
 
     for seg_idx, dist in enumerate(bs.distances):
         seg_freqs = (
-            np.stack(
-                [ph.band_structure.frequencies[seg_idx] for ph in phonons], axis=0
-            )
+            np.stack([ph.band_structure.frequencies[seg_idx] for ph in phonons], axis=0)
             * scale
         )  # (n_ensemble, n_qpts, n_bands)
         n_qpts = seg_freqs.shape[1]
@@ -150,11 +151,17 @@ def _plot_spectral(ax, phonons, scale: float, cmap: str):
 
     df = freq_grid[1] - freq_grid[0]
     freq_edges = np.concatenate(
-        [[freq_grid[0] - df / 2], (freq_grid[:-1] + freq_grid[1:]) / 2, [freq_grid[-1] + df / 2]]
+        [
+            [freq_grid[0] - df / 2],
+            (freq_grid[:-1] + freq_grid[1:]) / 2,
+            [freq_grid[-1] + df / 2],
+        ]
     )
 
     for S, d_edges in zip(S_list, d_edges_list):
-        ax.pcolormesh(d_edges, freq_edges, S.T, cmap=cmap, shading="auto", vmin=0, vmax=1)
+        ax.pcolormesh(
+            d_edges, freq_edges, S.T, cmap=cmap, shading="auto", vmin=0, vmax=1
+        )
 
 
 def plot_bands(

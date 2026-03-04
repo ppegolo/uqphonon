@@ -65,6 +65,7 @@ def _resolve_bandpath(
     prim_atoms: ase.Atoms,
     bandpath_spec,
     npoints: int,
+    labels: list[str] | None = None,
 ) -> tuple:
     """Resolve a band path spec to (qpoints, connections, labels).
 
@@ -72,13 +73,30 @@ def _resolve_bandpath(
     ----------
     prim_atoms : ase.Atoms
         Primitive cell atoms (used for auto-detection).
-    bandpath_spec : None, str, or ase.dft.kpoints.BandPath
-        None  → auto-detect via ASE/seekpath
-        str   → compact path like "MKGAL"
-        BandPath → use as-is
+    bandpath_spec : None, str, ase.dft.kpoints.BandPath, or list of ndarray
+        None       → auto-detect from the primitive cell via seekpath.
+        str        → compact path string, e.g. ``"MKGAL"``.
+        BandPath   → use as-is.
+        list[ndarray] → raw q-point arrays, one (N, 3) array per segment.
     npoints : int
-        Number of q-points per segment.
+        Number of q-points per segment (ignored when raw arrays are given).
+    labels : list[str], optional
+        Special-point labels (one per segment boundary).  Required when
+        *bandpath_spec* is a list of arrays; ignored otherwise.
     """
+    # Raw k-point arrays: list of (N, 3) ndarrays, one per segment
+    if (
+        isinstance(bandpath_spec, list)
+        and len(bandpath_spec) > 0
+        and isinstance(bandpath_spec[0], np.ndarray)
+    ):
+        qpoints = bandpath_spec
+        n_segments = len(qpoints)
+        connections = [True] * (n_segments - 1) + [False]
+        if labels is None:
+            labels = [""] * (n_segments + 1)
+        return qpoints, connections, labels
+
     if bandpath_spec is None:
         bp = prim_atoms.cell.bandpath(npoints=npoints)
     elif isinstance(bandpath_spec, str):
@@ -88,9 +106,9 @@ def _resolve_bandpath(
 
     segments = _parse_path_string(bp.path)
     bpath = [[bp.special_points[p] for p in seg] for seg in segments]
-    labels = _make_labels(segments)
+    resolved_labels = _make_labels(segments)
     qpoints, connections = get_band_qpoints_and_path_connections(bpath, npoints=npoints)
-    return qpoints, connections, labels
+    return qpoints, connections, resolved_labels
 
 
 class PhononEnsemble:
@@ -211,18 +229,28 @@ class PhononEnsemble:
     # Step 3: band structure
     # ------------------------------------------------------------------
 
-    def compute_bands(self, bandpath=None, npoints: int = 151) -> None:
+    def compute_bands(
+        self,
+        bandpath=None,
+        npoints: int = 151,
+        labels: list[str] | None = None,
+    ) -> None:
         """Compute phonon band structures for each ensemble member.
 
         Parameters
         ----------
-        bandpath : None, str, or ase.dft.kpoints.BandPath
+        bandpath : None, str, ase.dft.kpoints.BandPath, or list of ndarray
             Band path specification:
             - ``None``: auto-detect from the primitive cell via seekpath.
             - ``str``: compact path string, e.g. ``"MKGAL"``.
             - ``BandPath``: an existing ASE BandPath object.
+            - ``list[ndarray]``: raw q-point arrays, one ``(N, 3)`` array per
+              segment.
         npoints : int
-            Number of q-points per path segment.
+            Number of q-points per path segment (ignored for raw arrays).
+        labels : list[str], optional
+            Special-point labels (one per segment boundary).  Required when
+            *bandpath* is a list of arrays; ignored otherwise.
         """
         if self._forces is None:
             raise RuntimeError("Call run_forces() first.")
@@ -230,7 +258,9 @@ class PhononEnsemble:
         # Build primitive-cell atoms for path detection
         prim_atoms = _phonopy_to_ase(self._phonon.primitive)
 
-        qpoints, connections, labels = _resolve_bandpath(prim_atoms, bandpath, npoints)
+        qpoints, connections, labels = _resolve_bandpath(
+            prim_atoms, bandpath, npoints, labels=labels
+        )
 
         force_sets = self._forces  # (n_disp, n_ensemble, n_atoms, 3)
         n_ensemble = force_sets.shape[1]
