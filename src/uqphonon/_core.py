@@ -32,13 +32,16 @@ def _phonopy_to_ase(ph_atoms: PhonopyAtoms) -> ase.Atoms:
     )
 
 
-def _parse_path_string(path_str: str) -> list[list[str]]:
+def _parse_path_string(path_str: str, known_names=None) -> list[list[str]]:
     """Convert an ASE band path string to a list of segments.
 
     Handles three formats:
     - Compact user: 'GMKG|ALHA'  (| = segment break, each char = point)
     - Explicit user: 'G,M,K|G,A' (| = segment break, , = point separator)
     - ASE auto-detect: 'GXWK,GLUWLK' (, = segment break, each char = point)
+
+    When *known_names* (a set of point names) is provided, multi-character
+    point names such as ``B_1`` or ``GAMMA`` are matched greedily.
     """
     if "|" in path_str:
         raw_segments = path_str.split("|")
@@ -47,17 +50,66 @@ def _parse_path_string(path_str: str) -> list[list[str]]:
         return [list(seg) for seg in raw_segments]
     elif "," in path_str:
         # ASE format: comma separates disconnected segments
-        return [list(seg) for seg in path_str.split(",")]
+        raw_segments = path_str.split(",")
+        return [_tokenize_segment(seg, known_names) for seg in raw_segments]
     else:
-        return [list(path_str)]
+        return [_tokenize_segment(path_str, known_names)]
+
+
+def _tokenize_segment(seg: str, known_names=None) -> list[str]:
+    """Split a segment string into point names.
+
+    When *known_names* is given, uses greedy longest-match against the
+    known point names (handles multi-character names like ``B_1``).
+    Falls back to character-by-character splitting otherwise.
+    """
+    if not known_names or all(len(n) == 1 for n in known_names):
+        return list(seg)
+
+    # Greedy longest-match tokenizer
+    names_by_length = sorted(known_names, key=len, reverse=True)
+    result = []
+    i = 0
+    while i < len(seg):
+        matched = False
+        for name in names_by_length:
+            if seg[i:].startswith(name):
+                result.append(name)
+                i += len(name)
+                matched = True
+                break
+        if not matched:
+            # Skip unexpected characters (shouldn't happen with valid paths)
+            result.append(seg[i])
+            i += 1
+    return result
+
+
+def _prettify_label(name: str) -> str:
+    """Make a single k-point label plot-friendly.
+
+    * G / GAMMA → Γ (rendered via LaTeX)
+    * X_1 → X₁  (Unicode subscript digits)
+    """
+    _gamma = {"G", "GAMMA"}
+    if name.upper() in _gamma:
+        return "$\\Gamma$"
+
+    _subscript_digits = str.maketrans("0123456789", "₀₁₂₃₄₅₆₇₈₉")
+    # Convert trailing _<digits> to Unicode subscripts
+    if "_" in name:
+        parts = name.split("_", 1)
+        if parts[1].isdigit():
+            return parts[0] + parts[1].translate(_subscript_digits)
+    return name
 
 
 def _make_labels(segments: list[list[str]]) -> list[str]:
-    """Build phonopy-style label list, substituting G → Γ."""
+    """Build phonopy-style label list, substituting G/GAMMA → Γ and X_1 → X₁."""
     labels = []
     for seg in segments:
         for name in seg:
-            labels.append("$\\Gamma$" if name == "G" else name)
+            labels.append(_prettify_label(name))
     return labels
 
 
@@ -104,7 +156,7 @@ def _resolve_bandpath(
     else:
         bp = bandpath_spec  # already ASE BandPath
 
-    segments = _parse_path_string(bp.path)
+    segments = _parse_path_string(bp.path, known_names=set(bp.special_points))
     bpath = [[bp.special_points[p] for p in seg] for seg in segments]
     resolved_labels = _make_labels(segments)
     qpoints, connections = get_band_qpoints_and_path_connections(bpath, npoints=npoints)

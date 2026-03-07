@@ -62,9 +62,21 @@ def _decorate_axes(ax, phonon, scale: float, unit: str):
             # Segment break: next segment starts fresh, skip duplicating
             pass
 
-    ax.set_xticks(tick_positions)
-    ax.set_xticklabels(tick_labels)
-    for pos in tick_positions[1:-1]:
+    # Merge labels at coincident tick positions (segment breaks → "X|Y")
+    merged_positions = []
+    merged_labels = []
+    tol = 1e-8
+    for pos, lbl in zip(tick_positions, tick_labels):
+        if merged_positions and abs(pos - merged_positions[-1]) < tol:
+            if lbl and lbl != merged_labels[-1]:
+                merged_labels[-1] = merged_labels[-1] + "|" + lbl
+        else:
+            merged_positions.append(pos)
+            merged_labels.append(lbl)
+
+    ax.set_xticks(merged_positions)
+    ax.set_xticklabels(merged_labels)
+    for pos in merged_positions[1:-1]:
         ax.axvline(pos, color="k", lw=0.5, ls=":")
     ax.axhline(0, color="k", lw=0.5, ls=":")
     ax.set_xlim(distances[0][0], distances[-1][-1])
