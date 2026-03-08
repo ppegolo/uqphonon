@@ -86,21 +86,24 @@ def _tokenize_segment(seg: str, known_names=None) -> list[str]:
 
 
 def _prettify_label(name: str) -> str:
-    """Make a single k-point label plot-friendly.
-
-    * G / GAMMA → Γ (rendered via LaTeX)
-    * X_1 → X₁  (Unicode subscript digits)
-    """
+    """Make a single k-point label plot-friendly."""
     _gamma = {"G", "GAMMA"}
     if name.upper() in _gamma:
         return "$\\Gamma$"
 
-    _subscript_digits = str.maketrans("0123456789", "₀₁₂₃₄₅₆₇₈₉")
-    # Convert trailing _<digits> to Unicode subscripts
+    # X_1 style (underscore separator)
     if "_" in name:
         parts = name.split("_", 1)
         if parts[1].isdigit():
-            return parts[0] + parts[1].translate(_subscript_digits)
+            return rf"$\mathrm{{{parts[0]}}}_{{{parts[1]}}}$"
+
+    # B1, P1 style (trailing digits, no underscore)
+    i = len(name)
+    while i > 0 and name[i - 1].isdigit():
+        i -= 1
+    if 0 < i < len(name):
+        return rf"$\mathrm{{{name[:i]}}}_{{{name[i:]}}}$"
+
     return name
 
 

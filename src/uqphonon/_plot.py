@@ -59,16 +59,22 @@ def _decorate_axes(ax, phonon, scale: float, unit: str):
         tick_labels.append(labels[label_idx] if labels else "")
         label_idx += 1
         if not conn and i < len(distances) - 1:
-            # Segment break: next segment starts fresh, skip duplicating
-            pass
+            # Segment break: add start tick for the next segment
+            tick_positions.append(distances[i + 1][0])
+            tick_labels.append(labels[label_idx] if labels else "")
+            label_idx += 1
 
-    # Merge labels at coincident tick positions (segment breaks → "X|Y")
+    # Merge labels at nearby tick positions.
+    # Use a relative tolerance (2% of total path width) so that labels on
+    # very short segments (common in low-symmetry auto-detected paths) get
+    # folded into their neighbour rather than overlapping visually.
+    total_width = distances[-1][-1] - distances[0][0]
+    tol = max(1e-8, 0.02 * total_width)
     merged_positions = []
     merged_labels = []
-    tol = 1e-8
     for pos, lbl in zip(tick_positions, tick_labels):
         if merged_positions and abs(pos - merged_positions[-1]) < tol:
-            if lbl and lbl != merged_labels[-1]:
+            if lbl and lbl not in merged_labels[-1].split("|"):
                 merged_labels[-1] = merged_labels[-1] + "|" + lbl
         else:
             merged_positions.append(pos)
