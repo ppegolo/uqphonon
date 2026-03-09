@@ -18,6 +18,14 @@ dependencies = [
     "matplotlib",
     "ipi",
 ]
+authors = [
+  { name="Paolo Pegolo", email="paolo.pegolo@epfl.ch" },
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
 
 [project.optional-dependencies]
 dev = ["tox", "ruff"]
