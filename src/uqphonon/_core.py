@@ -278,7 +278,7 @@ class PhononEnsemble:
             self._supercell_matrix,
             primitive_matrix=self._primitive_matrix,
         )
-        phonon.generate_displacements(distance=distance)
+        phonon.generate_displacements(distance=distance, is_plusminus=True)
 
         self._phonon = phonon
         self._displaced_supercells = [
