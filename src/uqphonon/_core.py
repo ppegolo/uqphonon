@@ -345,6 +345,7 @@ class PhononEnsemble:
         bandpath=None,
         npoints: int = 151,
         labels: list[str] | None = None,
+        force_calibration: float | None = None,
     ) -> None:
         """Compute phonon band structures for each ensemble member.
 
@@ -374,6 +375,15 @@ class PhononEnsemble:
         )
 
         force_sets = self._forces  # (n_disp, n_ensemble, n_atoms, 3)
+
+        if force_calibration is not None:
+            force_sets_mean = force_sets.mean(
+                axis=1, keepdims=True
+            )  # (n_disp, 1, n_atoms, 3)
+            force_sets = (
+                (force_sets - force_sets_mean) * force_calibration
+            ) + force_sets_mean
+
         n_ensemble = force_sets.shape[1]
 
         def _compute_single(forces_for_member):

@@ -194,6 +194,7 @@ def plot_bands(
     mean_linewidth: float = 1.5,
     std_alpha: float = 0.3,
     cmap: str = "inferno",
+    ls: str = "-",
 ) -> tuple[plt.Figure, matplotlib.axes.Axes]:
     """Plot phonon band structure with UQ.
 
@@ -243,7 +244,9 @@ def plot_bands(
             _draw_band(
                 ax, ph, scale, color=color, lw=ensemble_linewidth, alpha=ensemble_alpha
             )
-        _draw_band(ax, mean_phonon, scale, color=color, lw=mean_linewidth, alpha=1.0)
+        _draw_band(
+            ax, mean_phonon, scale, color=color, lw=mean_linewidth, alpha=1.0, ls=ls
+        )
 
     elif mode == "mean+std":
         # Stack per segment: list of (n_ensemble, n_qpts, n_bands)
