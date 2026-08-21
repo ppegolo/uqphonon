@@ -194,10 +194,11 @@ class PhononEnsemble:
     displacement_distance : float
         Default displacement distance in Å (used if not overridden in
         :meth:`compute_displacements`).
-    forces_method : str, optional
-        Method passed to ``calculator.get_forces_ensemble(method=...)``.
-        Only used with the *calculator* backend.  Typical values are
-        ``"conservative"`` or ``"direct"``.
+    non_conservative : bool, optional
+        Passed to ``calculator.get_forces_ensemble``: ``False`` takes the ensemble
+        from gradients of the energy ensemble, ``True`` from the model's direct
+        force head.  Only used with the *calculator* backend.  ``None`` leaves the
+        choice to the calculator.
 
     Examples
     --------
@@ -228,7 +229,7 @@ class PhononEnsemble:
         device: str = "cpu",
         primitive_matrix="auto",
         displacement_distance: float = 0.03,
-        forces_method: str | None = None,
+        non_conservative: bool | None = None,
     ):
         if model is None and calculator is None:
             raise ValueError("Exactly one of 'model' or 'calculator' must be provided.")
@@ -242,7 +243,7 @@ class PhononEnsemble:
         self._device = device
         self._primitive_matrix = primitive_matrix
         self._displacement_distance = displacement_distance
-        self._forces_method = forces_method
+        self._non_conservative = non_conservative
 
         # State set by compute_displacements
         self._phonon: Phonopy | None = None
@@ -328,7 +329,7 @@ class PhononEnsemble:
         for supercell in self._displaced_supercells:
             # get_forces_ensemble returns (n_atoms, 3, n_ensemble)
             ensemble = self._calculator.get_forces_ensemble(
-                supercell, method=self._forces_method
+                supercell, self._non_conservative
             )
             # Transpose to (n_ensemble, n_atoms, 3)
             all_forces.append(np.moveaxis(ensemble, -1, 0))
