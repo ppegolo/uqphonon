@@ -169,8 +169,10 @@ def _resolve_bandpath(
 class PhononEnsemble:
     """Compute phonon band structures with uncertainty quantification.
 
-    Uses i-PI with a metatomic committee model to obtain an ensemble of
-    force predictions, then computes phonon bands for each ensemble member.
+    Obtains an ensemble of force predictions from either an i-PI committee
+    model (replay mode) or an ASE calculator with a ``get_forces_ensemble``
+    method (e.g. ``UPETCalculator``), then computes phonon bands for each
+    ensemble member.
 
     Parameters
     ----------
@@ -178,40 +180,70 @@ class PhononEnsemble:
         Pre-relaxed primitive cell.
     supercell_matrix : array-like, shape (3, 3)
         Supercell matrix passed to phonopy (e.g. ``[[2,0,0],[0,2,0],[0,0,2]]``).
-    model : str
-        Path to the metatomic ``.pt`` committee model file.
+    model : str, optional
+        Path to the metatomic ``.pt`` committee model file (i-PI backend).
+        Mutually exclusive with *calculator*.
+    calculator : object, optional
+        An ASE calculator with a ``get_forces_ensemble(atoms, non_conservative)``
+        method (e.g. ``upet.UPETCalculator``).  Mutually exclusive with *model*.
     device : str
         Compute device for the model (``"cpu"`` or ``"cuda"``).
+        Only used with the i-PI backend (*model*).
     primitive_matrix : array-like or "auto"
         Primitive matrix for phonopy. ``"auto"`` lets phonopy detect it.
     displacement_distance : float
         Default displacement distance in Å (used if not overridden in
         :meth:`compute_displacements`).
+    non_conservative : bool, optional
+        Passed to ``calculator.get_forces_ensemble``: ``False`` takes the ensemble
+        from gradients of the energy ensemble, ``True`` from the model's direct
+        force head.  Only used with the *calculator* backend.  ``None`` leaves the
+        choice to the calculator.
 
     Examples
     --------
-    >>> ph = PhononEnsemble(atoms, [[2,0,0],[0,2,0],[0,0,2]], "pet-mad.pt")
+    Using the i-PI backend:
+
+    >>> ph = PhononEnsemble(atoms, [[2,0,0],[0,2,0],[0,0,2]], model="pet-mad.pt")
     >>> ph.compute_displacements()
     >>> ph.run_forces("results/BeO")
     >>> ph.compute_bands()
     >>> fig, ax = ph.plot(mode="mean+std")
+
+    Using an ASE calculator with forces ensemble support:
+
+    >>> from upet import UPETCalculator
+    >>> calc = UPETCalculator(model="pet-mad-s", version="1.6.0")
+    >>> ph = PhononEnsemble(atoms, [[2,0,0],[0,2,0],[0,0,2]], calculator=calc)
+    >>> ph.compute_displacements()
+    >>> ph.run_forces()
+    >>> ph.compute_bands()
     """
 
     def __init__(
         self,
         atoms: ase.Atoms,
         supercell_matrix,
-        model: str,
+        model: str | None = None,
+        calculator=None,
         device: str = "cpu",
         primitive_matrix="auto",
         displacement_distance: float = 0.03,
+        non_conservative: bool | None = None,
     ):
+        if model is None and calculator is None:
+            raise ValueError("Exactly one of 'model' or 'calculator' must be provided.")
+        if model is not None and calculator is not None:
+            raise ValueError("Exactly one of 'model' or 'calculator' must be provided.")
+
         self._atoms = atoms
         self._supercell_matrix = supercell_matrix
         self._model = model
+        self._calculator = calculator
         self._device = device
         self._primitive_matrix = primitive_matrix
         self._displacement_distance = displacement_distance
+        self._non_conservative = non_conservative
 
         # State set by compute_displacements
         self._phonon: Phonopy | None = None
@@ -247,7 +279,7 @@ class PhononEnsemble:
             self._supercell_matrix,
             primitive_matrix=self._primitive_matrix,
         )
-        phonon.generate_displacements(distance=distance)
+        phonon.generate_displacements(distance=distance, is_plusminus=True)
 
         self._phonon = phonon
         self._displaced_supercells = [
@@ -258,19 +290,30 @@ class PhononEnsemble:
     # Step 2: force evaluation
     # ------------------------------------------------------------------
 
-    def run_forces(self, workdir: Path | str) -> None:
-        """Run i-PI to compute ensemble forces on all displaced supercells.
+    def run_forces(self, workdir: Path | str | None = None) -> None:
+        """Compute ensemble forces on all displaced supercells.
 
-        Writes input files to *workdir* and parses the committee force output.
+        Uses either the i-PI backend (when *model* was provided at construction)
+        or the calculator backend (when *calculator* was provided).
 
         Parameters
         ----------
-        workdir : Path or str
-            Directory for i-PI files (created if needed, files are kept).
+        workdir : Path or str, optional
+            Directory for i-PI files (created if needed).  Required for the
+            i-PI backend; ignored for the calculator backend.
         """
         if self._phonon is None:
             raise RuntimeError("Call compute_displacements() first.")
 
+        if self._calculator is not None:
+            self._run_forces_calculator()
+        else:
+            if workdir is None:
+                raise ValueError("'workdir' is required for the i-PI backend.")
+            self._run_forces_ipi(workdir)
+
+    def _run_forces_ipi(self, workdir: Path | str) -> None:
+        """Compute ensemble forces via i-PI replay mode."""
         supercell = _phonopy_to_ase(self._phonon.supercell)
         self._forces = run_ipi_forces(
             supercell=supercell,
@@ -279,6 +322,20 @@ class PhononEnsemble:
             device=self._device,
             workdir=workdir,
         )
+
+    def _run_forces_calculator(self) -> None:
+        """Compute ensemble forces by calling calculator.get_forces_ensemble()."""
+        all_forces = []
+        for supercell in self._displaced_supercells:
+            # get_forces_ensemble returns (n_atoms, 3, n_ensemble)
+            ensemble = self._calculator.get_forces_ensemble(
+                supercell, self._non_conservative
+            )
+            # Transpose to (n_ensemble, n_atoms, 3)
+            all_forces.append(np.moveaxis(ensemble, -1, 0))
+
+        # Stack into (n_disp, n_ensemble, n_atoms, 3)
+        self._forces = np.stack(all_forces, axis=0)
 
     # ------------------------------------------------------------------
     # Step 3: band structure
@@ -289,6 +346,7 @@ class PhononEnsemble:
         bandpath=None,
         npoints: int = 151,
         labels: list[str] | None = None,
+        force_calibration: float | None = None,
     ) -> None:
         """Compute phonon band structures for each ensemble member.
 
@@ -306,6 +364,10 @@ class PhononEnsemble:
         labels : list[str], optional
             Special-point labels (one per segment boundary).  Required when
             *bandpath* is a list of arrays; ignored otherwise.
+        force_calibration : float, optional
+            Factor by which the deviation of every ensemble member from the
+            ensemble mean is scaled before computing the bands.  The mean
+            forces are left unchanged.
         """
         if self._forces is None:
             raise RuntimeError("Call run_forces() first.")
@@ -318,6 +380,15 @@ class PhononEnsemble:
         )
 
         force_sets = self._forces  # (n_disp, n_ensemble, n_atoms, 3)
+
+        if force_calibration is not None:
+            force_sets_mean = force_sets.mean(
+                axis=1, keepdims=True
+            )  # (n_disp, 1, n_atoms, 3)
+            force_sets = (
+                (force_sets - force_sets_mean) * force_calibration
+            ) + force_sets_mean
+
         n_ensemble = force_sets.shape[1]
 
         def _compute_single(forces_for_member):
