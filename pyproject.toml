@@ -30,6 +30,7 @@ license = {file = "LICENSE"}
 readme = "README.md"
 
 [project.optional-dependencies]
+upet = ["upet>=0.3.1,<0.4"]
 dev = ["tox", "ruff"]
 
 [tool.setuptools.packages.find]

@@ -184,7 +184,7 @@ class PhononEnsemble:
         Path to the metatomic ``.pt`` committee model file (i-PI backend).
         Mutually exclusive with *calculator*.
     calculator : object, optional
-        An ASE calculator with a ``get_forces_ensemble(atoms, method=...)``
+        An ASE calculator with a ``get_forces_ensemble(atoms, non_conservative)``
         method (e.g. ``upet.UPETCalculator``).  Mutually exclusive with *model*.
     device : str
         Compute device for the model (``"cpu"`` or ``"cuda"``).
@@ -213,7 +213,7 @@ class PhononEnsemble:
     Using an ASE calculator with forces ensemble support:
 
     >>> from upet import UPETCalculator
-    >>> calc = UPETCalculator("pet-mad-s-v1.5.0")
+    >>> calc = UPETCalculator(model="pet-mad-s", version="1.6.0")
     >>> ph = PhononEnsemble(atoms, [[2,0,0],[0,2,0],[0,0,2]], calculator=calc)
     >>> ph.compute_displacements()
     >>> ph.run_forces()
@@ -364,6 +364,10 @@ class PhononEnsemble:
         labels : list[str], optional
             Special-point labels (one per segment boundary).  Required when
             *bandpath* is a list of arrays; ignored otherwise.
+        force_calibration : float, optional
+            Factor by which the deviation of every ensemble member from the
+            ensemble mean is scaled before computing the bands.  The mean
+            forces are left unchanged.
         """
         if self._forces is None:
             raise RuntimeError("Call run_forces() first.")
